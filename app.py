@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Load API key from Streamlit secrets
 API_KEY = st.secrets.get("api_key", "")
-MODEL = "x-ai/grok-4.1-fast:free"
+MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
 st.set_page_config(page_title="Meeting Minutes Extractor", page_icon="📝")
 st.title("Meeting Minutes Extractor")
