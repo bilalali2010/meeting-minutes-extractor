@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Load API key from Streamlit secrets
 API_KEY = st.secrets.get("api_key", "")
-MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
+MODEL = "x-ai/grok-4.1-fast:free"
 
 st.set_page_config(page_title="Meeting Minutes Extractor", page_icon="📝")
 st.title("Meeting Minutes Extractor")
@@ -15,7 +15,7 @@ st.write("Paste your meeting transcript and get structured JSON minutes.")
 # Text input
 transcript = st.text_area("Meeting Transcript", height=300)
 
-# Mock JSON fallback (clean structured format)
+# Mock JSON fallback
 mock_result = {
     "date": "20th November 2025",
     "attendees": ["Alice", "Bob", "Charlie"],
@@ -37,14 +37,25 @@ mock_result = {
     ]
 }
 
-def extract_json_from_api(transcript):
+# Function to extract date and attendees from transcript
+def extract_metadata(transcript_text):
+    date_match = re.search(r"Meeting Date:\s*(.*)", transcript_text)
+    attendees_match = re.search(r"Attendees:\s*(.*)", transcript_text)
+    
+    date = date_match.group(1).strip() if date_match else datetime.today().strftime("%d %B %Y")
+    attendees = [x.strip() for x in attendees_match.group(1).split(",")] if attendees_match else []
+    
+    return date, attendees
+
+# Function to call OpenRouter API
+def extract_json_from_api(transcript_text):
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
         "model": MODEL,
-        "input": f"Extract meeting minutes from the following transcript in JSON format with keys: date, attendees, agenda, discussion, action_items:\n\n{transcript}"
+        "input": f"Extract meeting minutes from the following transcript in JSON format with keys: date, attendees, agenda, discussion, action_items:\n\n{transcript_text}"
     }
     try:
         response = requests.post("https://api.openrouter.ai/v1/completions", headers=headers, json=payload, timeout=10)
@@ -54,8 +65,15 @@ def extract_json_from_api(transcript):
         return json.loads(result)
     except Exception as e:
         st.warning(f"Could not reach OpenRouter API. Using mock JSON.\n\nError: {e}")
-        return mock_result
+        # Fill mock JSON with extracted metadata if available
+        date, attendees = extract_metadata(transcript_text)
+        mock_result_copy = mock_result.copy()
+        mock_result_copy["date"] = date
+        if attendees:
+            mock_result_copy["attendees"] = attendees
+        return mock_result_copy
 
+# Button to extract minutes
 if st.button("Extract Minutes"):
     if not transcript.strip():
         st.warning("Please enter the meeting transcript.")
