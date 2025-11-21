@@ -1,97 +1,47 @@
 import streamlit as st
-import json
 import requests
+import json
+import os
 
-st.set_page_config(page_title="Meeting Minute Extractor", page_icon="📝")
+# Load API key from Streamlit secrets
+API_KEY = st.secrets["api_key"]
+MODEL = "x-ai/grok-4.1-fast:free"
 
-st.title("📝 Meeting Minute Extractor (JSON Output)")
+st.set_page_config(page_title="Meeting Minutes Extractor", page_icon="📝")
 
-st.write("You can either paste your meeting notes below or upload a `.txt` file.")
+st.title("Meeting Minutes Extractor")
+st.write("Paste your meeting transcript and get structured JSON minutes.")
 
-# Text area for pasting notes
-meeting_text = st.text_area("Paste Meeting Notes", height=200)
+# Text input
+transcript = st.text_area("Meeting Transcript", height=300)
 
-# File uploader
-uploaded_file = st.file_uploader("Upload a .txt file", type=["txt"])
-
-if uploaded_file is not None:
-    try:
-        meeting_text = uploaded_file.read().decode("utf-8")
-        st.success("File loaded successfully!")
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
-
-# Check if API key exists
-if "api_key" in st.secrets:
-    OPENROUTER_API_KEY = st.secrets["api_key"]
-else:
-    st.error("API key not found in Streamlit secrets. Please add your OpenRouter API key.")
-    st.stop()
-
-# Function to call OpenRouter AI Grok model
-def extract_minutes_grok(text):
-    url = "https://api.openrouter.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "x-ai/grok-4.1-fast:free",
-        "messages": [
-            {
-                "role": "user",
-                "content": f"""
-Extract key points, action items, decisions, and participants from the following meeting notes.
-Format the output strictly in JSON with keys: "participants", "summary", "action_items", "decisions".
-
-Meeting Notes:
-{text}
-"""
-            }
-        ],
-        "temperature": 0.2,
-        "max_tokens": 500
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-    except requests.exceptions.ConnectionError:
-        return {"error": "Failed to connect to OpenRouter API. Check your network or API key."}
-    except requests.exceptions.Timeout:
-        return {"error": "Request to OpenRouter API timed out."}
-    except Exception as e:
-        return {"error": f"Unexpected error: {e}"}
-
-    if response.status_code == 200:
-        output_text = response.json()["choices"][0]["message"]["content"].strip()
-        try:
-            return json.loads(output_text)
-        except:
-            return {
-                "error": "Failed to parse JSON",
-                "raw_output": output_text
-            }
+if st.button("Extract Minutes"):
+    if not transcript.strip():
+        st.warning("Please enter the meeting transcript.")
     else:
-        return {
-            "error": f"API request failed with status {response.status_code}",
-            "details": response.text
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
         }
 
+        payload = {
+            "model": MODEL,
+            "input": f"Extract meeting minutes from the following transcript in JSON format:\n\n{transcript}"
+        }
 
-# Trigger extraction
-if st.button("Extract Meeting Minutes"):
-    if not meeting_text:
-        st.warning("Please paste notes or upload a file.")
-    else:
-        with st.spinner("Extracting..."):
-            result = extract_minutes_grok(meeting_text)
-            st.subheader("JSON Output")
-            st.json(result)
-
-            # Download JSON
-            st.download_button(
-                label="Download JSON",
-                data=json.dumps(result, indent=4),
-                file_name="meeting_minutes.json",
-                mime="application/json"
-            )
+        try:
+            response = requests.post("https://api.openrouter.ai/v1/completions", headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Grok usually returns output text in `completion` or `output` field
+            result = data.get("completion") or data.get("output") or "No result found"
+            
+            # Display as JSON
+            st.subheader("Extracted Minutes (JSON)")
+            try:
+                st.json(json.loads(result))
+            except:
+                st.text(result)
+        except Exception as e:
+            st.error(f"Error: {e}")
