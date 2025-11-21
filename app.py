@@ -1,86 +1,83 @@
 import streamlit as st
-import requests
-import json
 import re
 from datetime import datetime
 
-# Load API key from Streamlit secrets
-API_KEY = st.secrets.get("api_key", "")
-MODEL = "x-ai/grok-4.1-fast:free"
-
 st.set_page_config(page_title="Meeting Minutes Extractor", page_icon="📝")
 st.title("Meeting Minutes Extractor")
-st.write("Paste your meeting transcript and get structured JSON minutes.")
+st.write("Paste your meeting transcript and get structured JSON minutes (offline, no API required).")
 
-# Text input
-transcript = st.text_area("Meeting Transcript", height=300)
+# Input transcript
+transcript = st.text_area("Meeting Transcript", height=400)
 
-# Mock JSON fallback
-mock_result = {
-    "date": "20th November 2025",
-    "attendees": ["Alice", "Bob", "Charlie"],
-    "agenda": ["Project updates", "Blockers", "Action items"],
-    "discussion": [
-        {
-            "topic": "Project updates",
-            "summary": "Backend API authentication module completed. Data endpoints in progress. Frontend design almost done, waiting for API integration."
-        },
-        {
-            "topic": "Blockers",
-            "summary": "No major blockers. Frontend color scheme needs approval."
-        }
-    ],
-    "action_items": [
-        {"task": "Finish API endpoints", "owner": "Bob", "deadline": "25th November"},
-        {"task": "Integrate frontend with backend", "owner": "Charlie", "deadline": "26th November"},
-        {"task": "Review color scheme and provide feedback", "owner": "Alice", "deadline": "22nd November"}
-    ]
-}
-
-# Function to extract date and attendees from transcript
-def extract_metadata(transcript_text):
-    date_match = re.search(r"Meeting Date:\s*(.*)", transcript_text)
-    attendees_match = re.search(r"Attendees:\s*(.*)", transcript_text)
-    
+def extract_date_attendees(text):
+    date_match = re.search(r"Meeting Date:\s*(.*)", text)
+    attendees_match = re.search(r"Attendees:\s*(.*)", text)
     date = date_match.group(1).strip() if date_match else datetime.today().strftime("%d %B %Y")
     attendees = [x.strip() for x in attendees_match.group(1).split(",")] if attendees_match else []
-    
     return date, attendees
 
-# Function to call OpenRouter API
-def extract_json_from_api(transcript_text):
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": MODEL,
-        "input": f"Extract meeting minutes from the following transcript in JSON format with keys: date, attendees, agenda, discussion, action_items:\n\n{transcript_text}"
-    }
-    try:
-        response = requests.post("https://api.openrouter.ai/v1/completions", headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        result = data.get("completion") or data.get("output") or "{}"
-        return json.loads(result)
-    except Exception as e:
-        st.warning(f"Could not reach OpenRouter API. Using mock JSON.\n\nError: {e}")
-        # Fill mock JSON with extracted metadata if available
-        date, attendees = extract_metadata(transcript_text)
-        mock_result_copy = mock_result.copy()
-        mock_result_copy["date"] = date
-        if attendees:
-            mock_result_copy["attendees"] = attendees
-        return mock_result_copy
+def extract_action_items(text):
+    items = []
+    # Match patterns like "1. Bob to finish API endpoints by 25th November."
+    pattern = re.compile(r"\d+\.\s*(.*?)\s+to\s+(.*?)\s+by\s+(.*?)(?:\.|$)", re.IGNORECASE)
+    for match in pattern.finditer(text):
+        owner = match.group(1).strip()
+        task = match.group(2).strip()
+        deadline = match.group(3).strip()
+        items.append({"task": task, "owner": owner, "deadline": deadline})
+    return items
 
-# Button to extract minutes
+def extract_discussion(text):
+    discussion = []
+    # Match lines like "Alice: some text"
+    pattern = re.compile(r"(\w+):\s*(.*)")
+    temp_topic = None
+    temp_summary = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        match = pattern.match(line)
+        if match:
+            speaker, content = match.groups()
+            if temp_topic:
+                discussion.append({"topic": temp_topic, "summary": " ".join(temp_summary)})
+            temp_topic = f"{speaker}'s update"
+            temp_summary = [content]
+        elif temp_topic:
+            temp_summary.append(line)
+    if temp_topic:
+        discussion.append({"topic": temp_topic, "summary": " ".join(temp_summary)})
+    return discussion
+
+def extract_agenda(text):
+    agenda = []
+    # Look for keywords as agenda items
+    if re.search(r"project updates", text, re.IGNORECASE):
+        agenda.append("Project updates")
+    if re.search(r"blockers", text, re.IGNORECASE):
+        agenda.append("Blockers")
+    if re.search(r"action items", text, re.IGNORECASE):
+        agenda.append("Action items")
+    return agenda if agenda else ["General Discussion"]
+
+# Button click
 if st.button("Extract Minutes"):
     if not transcript.strip():
         st.warning("Please enter the meeting transcript.")
     else:
-        if not API_KEY:
-            st.error("API key not found. Please add it to Streamlit secrets as 'api_key'.")
-        else:
-            minutes_json = extract_json_from_api(transcript)
-            st.subheader("Structured Meeting Minutes (JSON)")
-            st.json(minutes_json)
+        date, attendees = extract_date_attendees(transcript)
+        agenda = extract_agenda(transcript)
+        discussion = extract_discussion(transcript)
+        action_items = extract_action_items(transcript)
+
+        minutes_json = {
+            "date": date,
+            "attendees": attendees,
+            "agenda": agenda,
+            "discussion": discussion,
+            "action_items": action_items
+        }
+
+        st.subheader("Structured Meeting Minutes (JSON)")
+        st.json(minutes_json)
