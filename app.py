@@ -22,7 +22,7 @@ if uploaded_file is not None:
         st.error(f"Error reading file: {e}")
 
 # Get API key from Streamlit secrets
-OPENROUTER_API_KEY = st.secrets["openrouter"]["api_key"]
+OPENROUTER_API_KEY = st.secrets["api_key"]
 
 # Function to call OpenRouter AI Grok model
 def extract_minutes_grok(text):
