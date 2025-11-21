@@ -28,11 +28,8 @@ def extract_action_items(text):
     return items
 
 def extract_discussion(text):
-    discussion = []
-    # Match lines like "Alice: some text"
+    discussion_dict = {}
     pattern = re.compile(r"(\w+):\s*(.*)")
-    temp_topic = None
-    temp_summary = []
     for line in text.split("\n"):
         line = line.strip()
         if not line:
@@ -40,15 +37,15 @@ def extract_discussion(text):
         match = pattern.match(line)
         if match:
             speaker, content = match.groups()
-            if temp_topic:
-                discussion.append({"topic": temp_topic, "summary": " ".join(temp_summary)})
-            temp_topic = f"{speaker}'s update"
-            temp_summary = [content]
-        elif temp_topic:
-            temp_summary.append(line)
-    if temp_topic:
-        discussion.append({"topic": temp_topic, "summary": " ".join(temp_summary)})
-    return discussion
+            if speaker not in discussion_dict:
+                discussion_dict[speaker] = []
+            discussion_dict[speaker].append(content)
+    # Convert to list of dicts
+    discussion_list = []
+    for speaker, lines in discussion_dict.items():
+        summary = " ".join(lines)
+        discussion_list.append({"topic": f"{speaker}'s update", "summary": summary})
+    return discussion_list
 
 def extract_agenda(text):
     agenda = []
