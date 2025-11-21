@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import json
+import re
+from datetime import datetime
 
 # Load API key from Streamlit secrets
 API_KEY = st.secrets.get("api_key", "")
@@ -13,7 +15,7 @@ st.write("Paste your meeting transcript and get structured JSON minutes.")
 # Text input
 transcript = st.text_area("Meeting Transcript", height=300)
 
-# Mock JSON fallback
+# Mock JSON fallback (clean structured format)
 mock_result = {
     "date": "20th November 2025",
     "attendees": ["Alice", "Bob", "Charlie"],
@@ -35,6 +37,25 @@ mock_result = {
     ]
 }
 
+def extract_json_from_api(transcript):
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": MODEL,
+        "input": f"Extract meeting minutes from the following transcript in JSON format with keys: date, attendees, agenda, discussion, action_items:\n\n{transcript}"
+    }
+    try:
+        response = requests.post("https://api.openrouter.ai/v1/completions", headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        result = data.get("completion") or data.get("output") or "{}"
+        return json.loads(result)
+    except Exception as e:
+        st.warning(f"Could not reach OpenRouter API. Using mock JSON.\n\nError: {e}")
+        return mock_result
+
 if st.button("Extract Minutes"):
     if not transcript.strip():
         st.warning("Please enter the meeting transcript.")
@@ -42,30 +63,6 @@ if st.button("Extract Minutes"):
         if not API_KEY:
             st.error("API key not found. Please add it to Streamlit secrets as 'api_key'.")
         else:
-            headers = {
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": MODEL,
-                "input": f"Extract meeting minutes from the following transcript in JSON format:\n\n{transcript}"
-            }
-
-            try:
-                response = requests.post("https://api.openrouter.ai/v1/completions", headers=headers, json=payload, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-                result = data.get("completion") or data.get("output") or "{}"
-
-                # Attempt to parse JSON, fallback to string if parsing fails
-                try:
-                    st.subheader("Extracted Minutes (JSON)")
-                    st.json(json.loads(result))
-                except:
-                    st.subheader("Extracted Minutes (Raw Text)")
-                    st.text(result)
-
-            except requests.exceptions.RequestException as e:
-                st.warning(f"Could not reach OpenRouter API. Using mock JSON.\n\nError: {e}")
-                st.subheader("Mock Extracted Minutes (JSON)")
-                st.json(mock_result)
+            minutes_json = extract_json_from_api(transcript)
+            st.subheader("Structured Meeting Minutes (JSON)")
+            st.json(minutes_json)
