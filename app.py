@@ -21,8 +21,12 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error reading file: {e}")
 
-# Get API key from Streamlit secrets
-OPENROUTER_API_KEY = st.secrets["api_key"]
+# Check if API key exists
+if "api_key" in st.secrets:
+    OPENROUTER_API_KEY = st.secrets["api_key"]
+else:
+    st.error("API key not found in Streamlit secrets. Please add your OpenRouter API key.")
+    st.stop()
 
 # Function to call OpenRouter AI Grok model
 def extract_minutes_grok(text):
@@ -49,14 +53,20 @@ Meeting Notes:
         "max_tokens": 500
     }
 
-    response = requests.post(url, headers=headers, json=payload)
-    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+    except requests.exceptions.ConnectionError:
+        return {"error": "Failed to connect to OpenRouter API. Check your network or API key."}
+    except requests.exceptions.Timeout:
+        return {"error": "Request to OpenRouter API timed out."}
+    except Exception as e:
+        return {"error": f"Unexpected error: {e}"}
+
     if response.status_code == 200:
         output_text = response.json()["choices"][0]["message"]["content"].strip()
         try:
             return json.loads(output_text)
         except:
-            # Fixed syntax error here
             return {
                 "error": "Failed to parse JSON",
                 "raw_output": output_text
