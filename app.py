@@ -56,9 +56,16 @@ Meeting Notes:
         try:
             return json.loads(output_text)
         except:
-            return {"error": "Failed to parse JSON. Raw output": output_text}
+            # Fixed syntax error here
+            return {
+                "error": "Failed to parse JSON",
+                "raw_output": output_text
+            }
     else:
-        return {"error": f"API request failed with status {response.status_code}", "details": response.text}
+        return {
+            "error": f"API request failed with status {response.status_code}",
+            "details": response.text
+        }
 
 
 # Trigger extraction
